@@ -105,6 +105,7 @@ if completed_file and missed_file:
             missed = summary["Missed"].sum()
             total_target = summary["Target"].sum()
             completion_pct = round((audited / total_target) * 100, 2)
+            summary = summary.reset_index()
         else:
             combined_df = pd.concat([df_completed_clean, df_missed_clean], ignore_index=True)
 
@@ -142,20 +143,35 @@ if completed_file and missed_file:
             total_target = audited + missed
             completion_pct = round((audited / total_target) * 100, 2) if total_target else 0
 
-            summary = df_completed_filtered.groupby(submitter_col)[store_col].nunique().rename("Actual").to_frame()
-            missed_summary = df_missed_filtered.groupby(submitter_col)[store_col].nunique().rename("Missed")
-            summary = summary.join(missed_summary, how='outer').fillna(0)
-            summary["Target"] = summary["Actual"] + summary["Missed"]
-            summary["Completion %"] = (summary["Actual"] / summary["Target"] * 100).round(0)
+            # ✅ Updated Summary with Leader column
+            if leader_col:
+                df_completed_filtered["Leader"] = df_completed_filtered[leader_col]
+                df_missed_filtered["Leader"] = df_missed_filtered[leader_col] if leader_col in df_missed_filtered.columns else None
 
-        # Add total row in both cases
+                summary = df_completed_filtered.groupby([submitter_col, "Leader"])[store_col].nunique().rename("Actual").to_frame()
+                missed_summary = df_missed_filtered.groupby([submitter_col, "Leader"])[store_col].nunique().rename("Missed")
+                summary = summary.join(missed_summary, how='outer').fillna(0)
+                summary["Target"] = summary["Actual"] + summary["Missed"]
+                summary["Completion %"] = (summary["Actual"] / summary["Target"] * 100).round(0)
+                summary = summary.reset_index()
+            else:
+                summary = df_completed_filtered.groupby(submitter_col)[store_col].nunique().rename("Actual").to_frame()
+                missed_summary = df_missed_filtered.groupby(submitter_col)[store_col].nunique().rename("Missed")
+                summary = summary.join(missed_summary, how='outer').fillna(0)
+                summary["Target"] = summary["Actual"] + summary["Missed"]
+                summary["Completion %"] = (summary["Actual"] / summary["Target"] * 100).round(0)
+                summary = summary.reset_index()
+
+        # Add total row
         total_row = pd.DataFrame({
+            submitter_col: ["Total"],
+            "Leader": ["-"] if leader_col else None,
             "Actual": [summary["Actual"].sum()],
             "Missed": [summary["Missed"].sum()],
             "Target": [summary["Target"].sum()],
             "Completion %": [round((summary["Actual"].sum() / summary["Target"].sum() * 100), 0)]
-        }, index=["Total"])
-        summary = pd.concat([summary, total_row])
+        })
+        summary = pd.concat([summary, total_row], ignore_index=True)
 
         st.markdown("### 📌 Summary Metrics")
         sm = st.columns(5)
@@ -167,13 +183,17 @@ if completed_file and missed_file:
         sm[4].metric(f"{emoji} Completion %", f"{completion_pct:.2f}%")
 
         st.markdown("### 📊 Target vs Actual")
-        fig = px.bar(summary.drop(index="Total"), y=["Target", "Actual"], barmode="group", text_auto=True,
+        fig = px.bar(summary.drop(summary.index[-1]), y=["Target", "Actual"], barmode="group", text_auto=True,
                      title="Target vs Actual Audits", labels={"value": "Stores", "index": "Submitter"})
         st.plotly_chart(fig, use_container_width=True)
 
         st.markdown("### 📋 Summary Table")
         styled_summary = summary.style.applymap(highlight_completion, subset=["Completion %"]).format(precision=0)
         st.dataframe(styled_summary, use_container_width=True)
+
+        # Download CSV button
+        csv = summary.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download Summary CSV", csv, "summary_table.csv", "text/csv")
 
         # Compliance block
         st.markdown("### 🧪 Aggregated Compliance Summary")
@@ -193,3 +213,4 @@ if completed_file and missed_file:
             df_missed_filtered.index += 1
             df_missed_filtered.index.name = "S.No"
             st.dataframe(df_missed_filtered)
+
