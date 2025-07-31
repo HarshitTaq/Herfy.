@@ -53,7 +53,6 @@ if completed_file and missed_file:
     df_missed.columns = df_missed.columns.str.strip()
 
     store_col = map_column(["Store Code", "Store", "Entity Id"], df_completed.columns)
-    store_name_col = map_column(["Store Name", "StoreName"], df_completed.columns)
     submitter_col = map_column(["Submitted by", "Submitted By", "Auditor", "Responsible"], df_completed.columns)
     region_col = map_column(["Region"], df_completed.columns)
     pc_col = map_column(["Profit Center", "Profit-Center"], df_completed.columns)
@@ -95,13 +94,11 @@ if completed_file and missed_file:
             df_primary = pd.DataFrame([
                 {
                     store_col: store,
-                    "Store Name": df_assignees.loc[df_assignees[store_col] == store, "Store Name"].values[0]
-                                  if store_name_col else "-",
                     "Primary Assignee": assignee_map[store],
                     "Completed": 1 if store in audited_stores else 0
                 } for store in all_stores if store in assignee_map
             ])
-            summary = df_primary.groupby(["Primary Assignee", "Store Name"])["Completed"].agg(["sum", "count"]).rename(columns={"sum": "Actual", "count": "Target"})
+            summary = df_primary.groupby(["Primary Assignee", store_col])["Completed"].agg(["sum", "count"]).rename(columns={"sum": "Actual", "count": "Target"})
             summary["Missed"] = summary["Target"] - summary["Actual"]
             summary["Completion %"] = (summary["Actual"] / summary["Target"] * 100).round(0)
             audited = summary["Actual"].sum()
@@ -146,10 +143,9 @@ if completed_file and missed_file:
             total_target = audited + missed
             completion_pct = round((audited / total_target) * 100, 2) if total_target else 0
 
-            # ✅ Updated Summary with Leader + Store Name columns
-            grouping_cols = [submitter_col]
-            if leader_col: grouping_cols.append(leader_col)
-            if store_name_col: grouping_cols.append(store_name_col)
+            # ✅ Updated Summary with Leader + Store
+            grouping_cols = [submitter_col, store_col]
+            if leader_col: grouping_cols.insert(1, leader_col)
 
             summary = df_completed_filtered.groupby(grouping_cols)[store_col].nunique().rename("Actual").to_frame()
             missed_summary = df_missed_filtered.groupby(grouping_cols)[store_col].nunique().rename("Missed")
@@ -162,7 +158,7 @@ if completed_file and missed_file:
         total_row = pd.DataFrame({
             submitter_col: ["Total"],
             leader_col if leader_col else "Leader": ["-"],
-            store_name_col if store_name_col else "Store Name": ["-"],
+            store_col: ["-"],
             "Actual": [summary["Actual"].sum()],
             "Missed": [summary["Missed"].sum()],
             "Target": [summary["Target"].sum()],
