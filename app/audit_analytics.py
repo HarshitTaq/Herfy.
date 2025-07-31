@@ -143,9 +143,11 @@ if completed_file and missed_file:
             total_target = audited + missed
             completion_pct = round((audited / total_target) * 100, 2) if total_target else 0
 
-            # ✅ Updated Summary with Leader + Store
-            grouping_cols = [submitter_col, store_col]
-            if leader_col: grouping_cols.insert(1, leader_col)
+            # ✅ Group by Submitter (+ Leader if available) and also keep Store as column (not in graph)
+            grouping_cols = [submitter_col]
+            if leader_col:
+                grouping_cols.append(leader_col)
+            grouping_cols.append(store_col)
 
             summary = df_completed_filtered.groupby(grouping_cols)[store_col].nunique().rename("Actual").to_frame()
             missed_summary = df_missed_filtered.groupby(grouping_cols)[store_col].nunique().rename("Missed")
@@ -176,8 +178,10 @@ if completed_file and missed_file:
         sm[4].metric(f"{emoji} Completion %", f"{completion_pct:.2f}%")
 
         st.markdown("### 📊 Target vs Actual")
-        fig = px.bar(summary.drop(summary.index[-1]), y=["Target", "Actual"], barmode="group", text_auto=True,
-                     title="Target vs Actual Audits", labels={"value": "Stores", "index": "Submitter"})
+        fig = px.bar(summary.drop(summary.index[-1]).groupby(submitter_col).sum(numeric_only=True).reset_index(),
+                     y=["Target", "Actual"], x=submitter_col,
+                     barmode="group", text_auto=True,
+                     title="Target vs Actual Audits", labels={"value": "Stores", submitter_col: "Submitter"})
         st.plotly_chart(fig, use_container_width=True)
 
         st.markdown("### 📋 Summary Table")
@@ -206,3 +210,4 @@ if completed_file and missed_file:
             df_missed_filtered.index += 1
             df_missed_filtered.index.name = "S.No"
             st.dataframe(df_missed_filtered)
+
